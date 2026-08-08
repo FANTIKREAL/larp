@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>LARP COIN</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:linear-gradient(180deg,#0d1117,#161b22);color:#fff;font-family:Arial,sans-serif;min-height:100vh}
+.app{max-width:520px;margin:auto;padding:18px 16px 28px}
+.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.title{font-size:25px;font-weight:800}
+.card{background:#1b222c;border:1px solid #303946;border-radius:20px;padding:16px;margin-bottom:14px;box-shadow:0 8px 30px #0003}
+.balance{text-align:center;font-size:40px;font-weight:900;margin:5px 0 3px}
+.label{text-align:center;color:#9ca8b8}
+.coin-wrap{display:flex;justify-content:center;align-items:center;height:300px}
+.coin{width:225px;height:225px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none;transition:.08s;filter:drop-shadow(0 0 28px #ff000066)}
+.coin img{width:100%;height:100%;object-fit:contain;border-radius:50%;display:block}
+.coin:active{transform:scale(.92) rotate(-2deg)}
+.energy{height:14px;background:#303846;border-radius:10px;overflow:hidden;margin-top:10px}
+.energy>div{height:100%;background:linear-gradient(90deg,#4fd1c5,#6ee7b7);width:100%;transition:.2s}
+.buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button{border:0;border-radius:14px;padding:14px;background:#2b3441;color:white;font-size:15px;font-weight:700;cursor:pointer}
+button.primary{background:#f2b90b;color:#171717}
+button:disabled{opacity:.45}
+.nav{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.panel{display:none}
+.panel.active{display:block}
+.item{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #303846}
+.small{color:#9ca8b8;font-size:13px}
+.float{position:fixed;pointer-events:none;font-weight:900;font-size:23px;animation:up .65s forwards}
+@keyframes up{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-90px)}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <div class="title">LARP COIN</div>
+    <div id="name" class="small">Игрок</div>
+  </div>
+
+  <section id="game" class="panel active">
+    <div class="card">
+      <div class="label">Твои монеты</div>
+      <div id="coins" class="balance">0</div>
+      <div class="coin-wrap">
+        <div id="coin" class="coin"><img src="/static/coin.png" alt="LARP COIN"></div>
+      </div>
+      <div class="label">⚡ <span id="energy">1000</span> / <span id="maxEnergy">1000</span></div>
+      <div class="energy"><div id="energyBar"></div></div>
+    </div>
+    <div class="buttons">
+      <button class="primary" id="tapUpgrade">⚡ +1 к клику</button>
+      <button id="energyUpgrade">🔋 +250 энергии</button>
+    </div>
+  </section>
+
+  <section id="top" class="panel">
+    <div class="card">
+      <h2>🏆 Топ игроков</h2>
+      <div id="leaderboard">Загрузка...</div>
+    </div>
+  </section>
+
+  <section id="ref" class="panel">
+    <div class="card">
+      <h2>👥 Рефералы</h2>
+      <p>Приглашай друзей и получай бонусы в LARP COIN.</p>
+      <div class="item"><span>Твои рефералы</span><b id="refs">0</b></div>
+      <button class="primary" id="share">📤 Пригласить друга</button>
+    </div>
+  </section>
+
+  <div class="nav">
+    <button onclick="showPanel('game')">🪙 Игра</button>
+    <button onclick="showPanel('top');loadTop()">🏆 Топ</button>
+    <button onclick="showPanel('ref')">👥 Рефы</button>
+  </div>
+</div>
+
+<script>
+const tg = window.Telegram.WebApp;
+tg.ready(); tg.expand();
+
+let initData = tg.initData;
+let state = null;
+let busy = false;
+
+function $(id){return document.getElementById(id)}
+function render(s){
+  state=s;
+  $('name').textContent=s.name;
+  $('coins').textContent=s.coins.toLocaleString('ru-RU');
+  $('energy').textContent=s.energy;
+  $('maxEnergy').textContent=s.max_energy;
+  $('refs').textContent=s.referrals;
+  $('energyBar').style.width=Math.max(0,Math.min(100,s.energy/s.max_energy*100))+'%';
+  $('tapUpgrade').textContent=`⚡ +1 к клику (${100*s.tap_power*s.tap_power} 🪙)`;
+  $('energyUpgrade').textContent=`🔋 +250 энергии (${150*s.energy_level*s.energy_level} 🪙)`;
+}
+
+async function api(path, body){
+  const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const data=await r.json();
+  if(!r.ok) throw new Error(data.detail || 'Ошибка');
+  return data;
+}
+
+async function init(){
+  if(!initData){
+    document.body.innerHTML='<div style="padding:30px;color:white;font-family:Arial">Открой игру через Telegram.</div>';
+    return;
+  }
+  try{
+    const p=new URLSearchParams(location.search);
+    const start=p.get('tgWebAppStartParam') || tg.initDataUnsafe?.start_param || null;
+    render(await api('/api/init',{init_data:initData,start_param:start}));
+  }catch(e){ alert(e.message); }
+}
+
+$('coin').addEventListener('pointerdown', async (e)=>{
+  if(busy || !state || state.energy<=0) return;
+  busy=true;
+  try{
+    const x=e.clientX,y=e.clientY;
+    const f=document.createElement('div'); f.className='float'; f.textContent='+'+state.tap_power+' 🪙';
+    f.style.left=x+'px'; f.style.top=y+'px'; document.body.appendChild(f);
+    setTimeout(()=>f.remove(),700);
+    render(await api('/api/tap',{init_data:initData,taps:1}));
+  }catch(e){console.error(e)}
+  busy=false;
+});
+
+$('tapUpgrade').onclick=async()=>{
+  try{render(await api('/api/upgrade',{init_data:initData,kind:'tap'}));}
+  catch(e){tg.showAlert(e.message)}
+};
+$('energyUpgrade').onclick=async()=>{
+  try{render(await api('/api/upgrade',{init_data:initData,kind:'energy'}));}
+  catch(e){tg.showAlert(e.message)}
+};
+
+async function loadTop(){
+  const data=await fetch('/api/leaderboard').then(r=>r.json());
+  $('leaderboard').innerHTML=data.map((x,i)=>`
+    <div class="item"><span>${i+1}. ${escapeHtml(x.name)}</span><b>${x.coins.toLocaleString('ru-RU')} 🪙</b></div>
+  `).join('');
+}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+function showPanel(id){
+  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
+  $(id).classList.add('active');
+}
+$('share').onclick=()=>{
+  const link=`https://t.me/share/url?url=${encodeURIComponent(location.origin)}&text=${encodeURIComponent('Заходи в LARP COIN 🔴')}`;
+  tg.openTelegramLink(link);
+};
+setInterval(()=>{if(state){render({...state,energy:Math.min(state.max_energy,state.energy+1)})}},1000);
+init();
+</script>
+</body>
+</html>
