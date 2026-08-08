@@ -44,9 +44,7 @@ body.evil .energy>div{background:#ff1111}
 .admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .admin-grid input{width:100%;padding:13px;border-radius:12px;border:1px solid #394352;background:#11161d;color:#fff;font-size:15px}
 .admin-grid button{grid-column:1/-1}
-.music-btn{padding:9px 11px!important;border-radius:12px!important;font-size:18px!important;
-background:#1b222c!important;border:1px solid #394352!important;color:#fff!important;
-min-width:42px;touch-action:manipulation;position:relative;z-index:100;pointer-events:auto}
+.music-btn{padding:9px 11px!important;border-radius:12px!important;font-size:18px!important;background:#1b222c!important;border:1px solid #394352!important;color:#fff!important;min-width:42px;touch-action:manipulation;position:relative;z-index:100;pointer-events:auto}
 .music-btn:active{transform:scale(.92)}
 .notice{padding:10px 12px;border-radius:12px;background:#11161d;color:#9ca8b8;font-size:13px;margin-top:10px}
 </style>
@@ -58,7 +56,7 @@ min-width:42px;touch-action:manipulation;position:relative;z-index:100;pointer-e
     <div class="title">🔴 LARP COIN</div>
     <div class="small" id="name">Загрузка...</div>
   </div>
-  <div style="display:flex;align-items:center;gap:8px"><button id="musicBtn" type="button" class="music-btn">🔇</button><div class="small" id="myId"></div></div>
+  <div style="display:flex;align-items:center;gap:8px"><button id="musicBtn" type="button" class="music-btn" aria-label="Музыка">🔇</button><div class="small" id="myId"></div></div>
 </header>
 
 <section id="game" class="panel active">
@@ -66,84 +64,41 @@ min-width:42px;touch-action:manipulation;position:relative;z-index:100;pointer-e
     <div class="balance" id="coins">0</div>
     <div class="label">🪙 монет</div>
     <div class="coin-wrap">
-      <div class="coin" id="coin">
-        <img src="/static/coin.png" alt="coin">
-      </div>
+      <div class="coin" id="coin"><img src="/static/coin.png" alt="coin"></div>
     </div>
     <div class="item"><span>⚡ Энергия</span><b><span id="energy">0</span> / <span id="maxEnergy">0</span></b></div>
     <div class="energy"><div id="energyBar"></div></div>
   </div>
-
-  <div class="card">
-    <div class="buttons">
-      <button class="primary" id="tapUpgrade">⚡ Улучшить клик</button>
-      <button class="primary" id="energyUpgrade">🔋 Улучшить энергию</button>
-    </div>
-  </div>
+  <div class="card"><div class="buttons"><button class="primary" id="tapUpgrade">⚡ Улучшить клик</button><button class="primary" id="energyUpgrade">🔋 Улучшить энергию</button></div></div>
 </section>
 
-<section id="top" class="panel">
-  <div class="card">
-    <h2>🏆 Топ игроков</h2>
-    <div id="leaderboard"></div>
-  </div>
-</section>
+<section id="top" class="panel"><div class="card"><h2>🏆 Топ игроков</h2><div id="leaderboard"></div></div></section>
 
-<section id="ref" class="panel">
-  <div class="card">
-    <h2>👥 Рефералы</h2>
-    <p>Приглашай друзей и получай бонусы в LARP COIN.</p>
-    <div class="item"><span>Твои рефералы</span><b id="refs">0</b></div>
-    <button class="primary" id="share">📤 Пригласить друга</button>
-  </div>
-</section>
+<section id="ref" class="panel"><div class="card"><h2>👥 Рефералы</h2><p>Приглашай друзей и получай бонусы в LARP COIN.</p><div class="item"><span>Твои рефералы</span><b id="refs">0</b></div><button class="primary" id="share">📤 Пригласить друга</button></div></section>
 
-<section id="admin" class="panel">
-  <div class="card">
-    <h2>🛠 Админка</h2>
-    <div class="small">Выдача коинов по Telegram ID.</div>
-    <div class="admin-grid" style="margin-top:12px">
-      <input id="targetId" inputmode="numeric" placeholder="Telegram ID">
-      <input id="grantAmount" inputmode="numeric" placeholder="Количество">
-      <button class="primary" id="grantBtn">💰 Выдать коины</button>
-    </div>
-    <div id="grantResult" class="notice">Только для администратора.</div>
-  </div>
-</section>
+<section id="admin" class="panel"><div class="card"><h2>🛠 Админка</h2><div class="small">Выдача коинов по Telegram ID.</div><div class="admin-grid" style="margin-top:12px"><input id="targetId" inputmode="numeric" placeholder="Telegram ID"><input id="grantAmount" inputmode="numeric" placeholder="Количество"><button class="primary" id="grantBtn">💰 Выдать коины</button></div><div id="grantResult" class="notice">Только для администратора.</div></div></section>
 
-<div class="nav">
-  <button onclick="showPanel('game')">🪙 Игра</button>
-  <button onclick="showPanel('top');loadTop()">🏆 Топ</button>
-  <button onclick="showPanel('ref')">👥 Рефы</button>
-  <button id="adminNav" style="display:none" onclick="showPanel('admin')">🛠 Админ</button>
-</div>
+<div class="nav"><button onclick="showPanel('game')">🪙 Игра</button><button onclick="showPanel('top');loadTop()">🏆 Топ</button><button onclick="showPanel('ref')">👥 Рефы</button><button id="adminNav" style="display:none" onclick="showPanel('admin')">🛠 Админ</button></div>
 </div>
 
-<audio id="bgMusic" loop preload="auto">
-  <source src="/static/music.mp3" type="audio/mpeg">
+<audio id="bgMusic" loop preload="auto" playsinline>
+  <source src="/static/music.m4a" type="audio/mp4">
 </audio>
 
-<div id="easter">
-  <img src="/static/coin.png" id="easterImg" alt="">
-  <div class="glitch"></div>
-</div>
+<div id="easter"><img src="/static/coin.png" id="easterImg" alt=""><div class="glitch"></div></div>
 
 <script>
 const tg=window.Telegram.WebApp;
 tg.ready();tg.expand();
-
 const initData=tg.initData;
 let state=null;
 let evilTimer=null;
-
 const EASTER=[333,3333,33333,333333];
-
 function $(id){return document.getElementById(id)}
 
 function render(s){
   const oldCoins=state?.coins;
   state=s;
-
   $('name').textContent=s.name;
   $('myId').textContent='ID: '+s.id;
   $('coins').textContent=Number(s.coins).toLocaleString('ru-RU');
@@ -153,22 +108,12 @@ function render(s){
   $('energyBar').style.width=Math.max(0,Math.min(100,s.energy/s.max_energy*100))+'%';
   $('tapUpgrade').textContent=`⚡ +1 к клику (${100*s.tap_power*s.tap_power} 🪙)`;
   $('energyUpgrade').textContent=`🔋 +250 энергии (${150*s.energy_level*s.energy_level} 🪙)`;
-
-  if(s.is_admin){
-    $('adminNav').style.display='block';
-  }
-
-  if(oldCoins!==s.coins && EASTER.includes(Number(s.coins))){
-    triggerEaster();
-  }
+  if(s.is_admin)$('adminNav').style.display='block';
+  if(oldCoins!==s.coins && EASTER.includes(Number(s.coins)))triggerEaster();
 }
 
 async function api(path,body){
-  const r=await fetch(path,{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(body)
-  });
+  const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const data=await r.json().catch(()=>({detail:'Ошибка сервера'}));
   if(!r.ok)throw new Error(data.detail||'Ошибка');
   return data;
@@ -179,64 +124,32 @@ function triggerEaster(){
   document.body.classList.add('evil');
   $('easter').classList.add('show');
   if(navigator.vibrate)navigator.vibrate([80,50,120]);
-
-  evilTimer=setTimeout(()=>{
-    $('easter').classList.remove('show');
-    document.body.classList.remove('evil');
-  },5000);
+  evilTimer=setTimeout(()=>{$('easter').classList.remove('show');document.body.classList.remove('evil')},5000);
 }
 
-async function sendTap(taps,x,y){
-  if(!state || taps<=0)return;
-
-  const actual=Math.min(taps,state.energy);
-  if(actual<=0)return;
-
-  const f=document.createElement('div');
-  f.className='float';
-  f.textContent='+'+(actual*state.tap_power)+' 🪙';
-  f.style.left=x+'px';
-  f.style.top=y+'px';
-  document.body.appendChild(f);
-  setTimeout(()=>f.remove(),700);
-
-  try{
-    const s=await api('/api/tap',{init_data:initData,taps:actual});
-    render(s);
-  }catch(err){
-    console.error(err);
-  }
-}
-
-const tapQueue = [];
-let tapFlushTimer = null;
-let tapSending = false;
+const tapQueue=[];
+let tapFlushTimer=null;
+let tapSending=false;
 
 function addOptimisticCoins(count){
-  if(!state || count<=0) return;
-  const allowed = Math.min(count, state.energy);
-  if(allowed <= 0) return 0;
-
-  state.energy -= allowed;
-  state.coins += allowed * state.tap_power;
-  state.best_coins = Math.max(state.best_coins || 0, state.coins);
-
-  $('coins').textContent = Number(state.coins).toLocaleString('ru-RU');
-  $('energy').textContent = state.energy;
-  $('energyBar').style.width =
-    Math.max(0, Math.min(100, state.energy/state.max_energy*100))+'%';
-
+  if(!state||count<=0)return 0;
+  const allowed=Math.min(count,state.energy);
+  if(allowed<=0)return 0;
+  state.energy-=allowed;
+  state.coins+=allowed*state.tap_power;
+  state.best_coins=Math.max(state.best_coins||0,state.coins);
+  $('coins').textContent=Number(state.coins).toLocaleString('ru-RU');
+  $('energy').textContent=state.energy;
+  $('energyBar').style.width=Math.max(0,Math.min(100,state.energy/state.max_energy*100))+'%';
+  if(EASTER.includes(Number(state.coins)))triggerEaster();
   return allowed;
 }
 
 function queueTapOriginal(count){
-  if(!state || count<=0) return;
-
-  const accepted = addOptimisticCoins(count);
-  if(!accepted) return;
-
+  if(!state||count<=0)return;
+  const accepted=addOptimisticCoins(count);
+  if(!accepted)return;
   tapQueue.push(accepted);
-
   const f=document.createElement('div');
   f.className='float';
   f.textContent='+'+(accepted*state.tap_power)+' 🪙';
@@ -244,220 +157,113 @@ function queueTapOriginal(count){
   f.style.top=(window.innerHeight/2-30)+'px';
   document.body.appendChild(f);
   setTimeout(()=>f.remove(),700);
-
-  // Batch taps for only a very short time, so the UI stays instant.
-  if(!tapFlushTimer){
-    tapFlushTimer=setTimeout(flushTaps,80);
-  }
+  if(!tapFlushTimer)tapFlushTimer=setTimeout(flushTaps,80);
 }
 
 async function flushTaps(){
   tapFlushTimer=null;
-  if(tapSending || tapQueue.length===0) return;
-
+  if(tapSending||tapQueue.length===0)return;
   tapSending=true;
   const total=tapQueue.reduce((a,b)=>a+b,0);
   tapQueue.length=0;
-
   try{
     const s=await api('/api/tap',{init_data:initData,taps:total});
-
-    // Server is authoritative, but only reconcile if it differs.
-    // This prevents the visible counter from jumping backwards while tapping.
     if(state){
       const optimisticCoins=state.coins;
-      const optimisticEnergy=state.energy;
       const coinDifference=Math.abs(Number(s.coins)-Number(optimisticCoins));
-
-      if(coinDifference > Math.max(2, state.tap_power*2)){
-        render(s);
-      }else{
-        state.max_energy=s.max_energy;
-        state.tap_power=s.tap_power;
-        state.energy_level=s.energy_level;
-        state.referrals=s.referrals;
-        state.is_admin=s.is_admin;
-        state.name=s.name;
-        state.id=s.id;
-        state.best_coins=Math.max(state.best_coins||0,s.best_coins||0);
-        $('energy').textContent=state.energy;
-        $('maxEnergy').textContent=state.max_energy;
-        $('energyBar').style.width=Math.max(0,Math.min(100,state.energy/state.max_energy*100))+'%';
+      if(coinDifference>Math.max(2,state.tap_power*2))render(s);
+      else{
+        state.max_energy=s.max_energy;state.tap_power=s.tap_power;state.energy_level=s.energy_level;state.referrals=s.referrals;state.is_admin=s.is_admin;state.name=s.name;state.id=s.id;state.best_coins=Math.max(state.best_coins||0,s.best_coins||0);
+        $('energy').textContent=state.energy;$('maxEnergy').textContent=state.max_energy;$('energyBar').style.width=Math.max(0,Math.min(100,state.energy/state.max_energy*100))+'%';
       }
     }
   }catch(err){
     console.error(err);
-    // Re-sync after a failed request.
-    try{ render(await api('/api/state',{init_data:initData})); }catch(e){}
+    try{render(await api('/api/state',{init_data:initData}))}catch(e){}
   }finally{
     tapSending=false;
-    if(tapQueue.length) flushTaps();
+    if(tapQueue.length)flushTaps();
   }
 }
 
-$('coin').addEventListener('pointerdown', e=>{
-  e.preventDefault();
-  queueTap(1);
-});
-
-$('tapUpgrade').onclick=async()=>{
-  try{render(await api('/api/upgrade',{init_data:initData,kind:'tap'}))}
-  catch(e){tg.showAlert(e.message)}
-};
-
-$('energyUpgrade').onclick=async()=>{
-  try{render(await api('/api/upgrade',{init_data:initData,kind:'energy'}))}
-  catch(e){tg.showAlert(e.message)}
-};
+$('coin').addEventListener('pointerdown',e=>{e.preventDefault();queueTap(1)});
+$('tapUpgrade').onclick=async()=>{try{render(await api('/api/upgrade',{init_data:initData,kind:'tap'}))}catch(e){tg.showAlert(e.message)}};
+$('energyUpgrade').onclick=async()=>{try{render(await api('/api/upgrade',{init_data:initData,kind:'energy'}))}catch(e){tg.showAlert(e.message)}};
 
 async function loadTop(){
-  try{
-    const data=await fetch('/api/leaderboard').then(r=>r.json());
-    $('leaderboard').innerHTML=data.map((x,i)=>`
-      <div class="item">
-        <span>${i+1}. ${escapeHtml(x.name)}</span>
-        <b>${Number(x.coins).toLocaleString('ru-RU')} 🪙</b>
-      </div>
-    `).join('');
-  }catch(e){
-    $('leaderboard').textContent='Ошибка загрузки топа';
-  }
+  try{const data=await fetch('/api/leaderboard').then(r=>r.json());$('leaderboard').innerHTML=data.map((x,i)=>`<div class="item"><span>${escapeHtml(x.name)}</span><b>${Number(x.coins).toLocaleString('ru-RU')} 🪙</b></div>`).join('')}catch(e){$('leaderboard').textContent='Ошибка загрузки топа'}
 }
-
-function escapeHtml(s){
-  return String(s).replace(/[&<>"']/g,m=>({
-    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
-  }[m]));
-}
-
-function showPanel(id){
-  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
-  $(id).classList.add('active');
-}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+function showPanel(id){document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));$(id).classList.add('active')}
 
 $('share').onclick=()=>{
   if(!state)return;
-
   const botLink=`https://t.me/larpcoin333bot?start=ref_${state.id}`;
   const text='🔴 Заходи в LARP COIN и получи бонус!';
-
-  // This opens Telegram's share sheet with the REAL bot link.
   const shareLink=`https://t.me/share/url?url=${encodeURIComponent(botLink)}&text=${encodeURIComponent(text)}`;
   tg.openTelegramLink(shareLink);
 };
 
 $('grantBtn').onclick=async()=>{
-  const target=Number($('targetId').value);
-  const amount=Number($('grantAmount').value);
-
-  if(!Number.isInteger(target)||target<=0||!Number.isInteger(amount)||amount<=0){
-    $('grantResult').textContent='Введи корректный ID и положительное количество коинов.';
-    return;
-  }
-
-  try{
-    const s=await api('/api/admin/grant',{
-      init_data:initData,
-      target_id:target,
-      amount:amount
-    });
-    $('grantResult').textContent=
-      `Готово: пользователю ${target} выдано ${amount.toLocaleString('ru-RU')} 🪙. Сейчас у него ${Number(s.coins).toLocaleString('ru-RU')} 🪙.`;
-  }catch(e){
-    $('grantResult').textContent='Ошибка: '+e.message;
-  }
+  const target=Number($('targetId').value);const amount=Number($('grantAmount').value);
+  if(!Number.isInteger(target)||target<=0||!Number.isInteger(amount)||amount<=0){$('grantResult').textContent='Введи корректный ID и положительное количество коинов.';return}
+  try{const s=await api('/api/admin/grant',{init_data:initData,target_id:target,amount:amount});$('grantResult').textContent=`Готово: пользователю ${target} выдано ${amount.toLocaleString('ru-RU')} 🪙. Сейчас у него ${Number(s.coins).toLocaleString('ru-RU')} 🪙.`}catch(e){$('grantResult').textContent='Ошибка: '+e.message}
 };
 
 setInterval(async()=>{
-  if(!state || tapSending || tapQueue.length)return;
+  if(!state||tapSending||tapQueue.length)return;
   try{
     const s=await api('/api/state',{init_data:initData});
-    // Do not overwrite a locally optimistic tap count with an older server snapshot.
-    if(Number(s.coins) >= Number(state.coins)){
-      render(s);
-    }else{
-      state.energy=s.energy;
-      state.max_energy=s.max_energy;
-      state.tap_power=s.tap_power;
-      state.energy_level=s.energy_level;
-      state.referrals=s.referrals;
-      state.is_admin=s.is_admin;
-      state.name=s.name;
-      state.id=s.id;
-      $('energy').textContent=s.energy;
-      $('maxEnergy').textContent=s.max_energy;
-      $('energyBar').style.width=Math.max(0,Math.min(100,s.energy/s.max_energy*100))+'%';
-    }
+    if(Number(s.coins)>=Number(state.coins))render(s);
+    else{state.energy=s.energy;state.max_energy=s.max_energy;state.tap_power=s.tap_power;state.energy_level=s.energy_level;state.referrals=s.referrals;state.is_admin=s.is_admin;state.name=s.name;state.id=s.id;$('energy').textContent=s.energy;$('maxEnergy').textContent=s.max_energy;$('energyBar').style.width=Math.max(0,Math.min(100,s.energy/s.max_energy*100))+'%'}
   }catch(e){console.error(e)}
 },2000);
 
+const bgMusic=$('bgMusic');
+const musicBtn=$('musicBtn');
+let musicOn=false;
+bgMusic.volume=.35;
 
-const bgMusic = document.getElementById('bgMusic');
-const musicBtn = document.getElementById('musicBtn');
-let musicOn = false;
-
-bgMusic.volume = 0.35;
+function setMusicButton(on){musicOn=on;musicBtn.textContent=on?'🔊':'🔇';musicBtn.setAttribute('aria-label',on?'Выключить музыку':'Включить музыку')}
 
 async function startMusic(){
   try{
+    bgMusic.currentTime=bgMusic.currentTime||0;
     await bgMusic.play();
-    musicOn = true;
-    musicBtn.textContent = '🔊';
+    setMusicButton(true);
   }catch(e){
-    musicOn = false;
-    musicBtn.textContent = '🔇';
-    console.log('Autoplay blocked until user interaction');
+    setMusicButton(false);
+    console.warn('Не удалось запустить музыку:',e);
   }
 }
 
-function stopMusic(){
-  bgMusic.pause();
-  musicOn = false;
-  musicBtn.textContent = '🔇';
-}
+function stopMusic(){bgMusic.pause();setMusicButton(false)}
 
-window.toggleMusic = async function(event){
-  if(event){
-    event.preventDefault();
-    event.stopPropagation();
-  }
-  if(musicOn) stopMusic();
-  else await startMusic();
-};
-
-musicBtn.addEventListener('pointerdown', function(event){
-  event.preventDefault();
-  event.stopPropagation();
+musicBtn.addEventListener('click',async e=>{
+  e.preventDefault();
+  e.stopPropagation();
+  if(musicOn)stopMusic();else await startMusic();
 });
 
-musicBtn.addEventListener('click', function(event){
-  event.preventDefault();
-  event.stopPropagation();
-  window.toggleMusic(event);
+// Первый клик по монете также может разрешить звук, если пользователь не нажал кнопку.
+const originalQueueTap=queueTapOriginal;
+function queueTap(count){if(!musicOn)startMusic();originalQueueTap(count)}
+
+// Если Telegram/браузер временно поставил звук на паузу при возврате в приложение — продолжаем его.
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden&&musicOn)bgMusic.play().catch(()=>{});
 });
 
-// Music starts from the first coin tap if the browser allows it.
-const originalQueueTap = queueTapOriginal;
-function queueTap(count){
-  if(!musicOn) startMusic();
-  originalQueueTap(count);
-}
+tg.onEvent('activated',()=>{if(musicOn)bgMusic.play().catch(()=>{})});
 
 async function init(){
-  if(!initData){
-    document.body.innerHTML='<div style="padding:30px;color:white;font-family:Arial">Открой игру через Telegram.</div>';
-    return;
-  }
-
+  if(!initData){document.body.innerHTML='<div style="padding:30px;color:white;font-family:Arial">Открой игру через Telegram.</div>';return}
   try{
     const p=new URLSearchParams(location.search);
     const start=p.get('ref')||p.get('tgWebAppStartParam')||tg.initDataUnsafe?.start_param||null;
     render(await api('/api/init',{init_data:initData,start_param:start}));
-  }catch(e){
-    tg.showAlert(e.message);
-  }
+  }catch(e){tg.showAlert(e.message)}
 }
-
 init();
 </script>
 </body>
