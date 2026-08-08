@@ -210,26 +210,96 @@ async function sendTap(taps,x,y){
   }
 }
 
-$('coin').addEventListener('pointerdown',async e=>{
-  e.preventDefault();
+const tapQueue = [];
+let tapFlushTimer = null;
+let tapSending = false;
 
-  if(!state || state.energy<=0)return;
+function addOptimisticCoins(count){
+  if(!state || count<=0) return;
+  const allowed = Math.min(count, state.energy);
+  if(allowed <= 0) return 0;
 
-  // Every physical pointer is counted. Four simultaneous fingers = 4 taps.
-  tapQueue++;
-  const x=e.clientX;
-  const y=e.clientY;
+  state.energy -= allowed;
+  state.coins += allowed * state.tap_power;
+  state.best_coins = Math.max(state.best_coins || 0, state.coins);
 
-  if(sending)return;
-  sending=true;
+  $('coins').textContent = Number(state.coins).toLocaleString('ru-RU');
+  $('energy').textContent = state.energy;
+  $('energyBar').style.width =
+    Math.max(0, Math.min(100, state.energy/state.max_energy*100))+'%';
 
-  while(tapQueue>0){
-    const count=tapQueue;
-    tapQueue=0;
-    await sendTap(count,x,y);
+  return allowed;
+}
+
+function queueTapOriginal(count){
+  if(!state || count<=0) return;
+
+  const accepted = addOptimisticCoins(count);
+  if(!accepted) return;
+
+  tapQueue.push(accepted);
+
+  const f=document.createElement('div');
+  f.className='float';
+  f.textContent='+'+(accepted*state.tap_power)+' 🪙';
+  f.style.left=(window.innerWidth/2-45)+'px';
+  f.style.top=(window.innerHeight/2-30)+'px';
+  document.body.appendChild(f);
+  setTimeout(()=>f.remove(),700);
+
+  // Batch taps for only a very short time, so the UI stays instant.
+  if(!tapFlushTimer){
+    tapFlushTimer=setTimeout(flushTaps,80);
   }
+}
 
-  sending=false;
+async function flushTaps(){
+  tapFlushTimer=null;
+  if(tapSending || tapQueue.length===0) return;
+
+  tapSending=true;
+  const total=tapQueue.reduce((a,b)=>a+b,0);
+  tapQueue.length=0;
+
+  try{
+    const s=await api('/api/tap',{init_data:initData,taps:total});
+
+    // Server is authoritative, but only reconcile if it differs.
+    // This prevents the visible counter from jumping backwards while tapping.
+    if(state){
+      const optimisticCoins=state.coins;
+      const optimisticEnergy=state.energy;
+      const coinDifference=Math.abs(Number(s.coins)-Number(optimisticCoins));
+
+      if(coinDifference > Math.max(2, state.tap_power*2)){
+        render(s);
+      }else{
+        state.max_energy=s.max_energy;
+        state.tap_power=s.tap_power;
+        state.energy_level=s.energy_level;
+        state.referrals=s.referrals;
+        state.is_admin=s.is_admin;
+        state.name=s.name;
+        state.id=s.id;
+        state.best_coins=Math.max(state.best_coins||0,s.best_coins||0);
+        $('energy').textContent=state.energy;
+        $('maxEnergy').textContent=state.max_energy;
+        $('energyBar').style.width=Math.max(0,Math.min(100,state.energy/state.max_energy*100))+'%';
+      }
+    }
+  }catch(err){
+    console.error(err);
+    // Re-sync after a failed request.
+    try{ render(await api('/api/state',{init_data:initData})); }catch(e){}
+  }finally{
+    tapSending=false;
+    if(tapQueue.length) flushTaps();
+  }
+}
+
+$('coin').addEventListener('pointerdown', e=>{
+  e.preventDefault();
+  queueTap(1);
 });
 
 $('tapUpgrade').onclick=async()=>{
@@ -301,12 +371,27 @@ $('grantBtn').onclick=async()=>{
 };
 
 setInterval(async()=>{
-  if(!state)return;
+  if(!state || tapSending || tapQueue.length)return;
   try{
     const s=await api('/api/state',{init_data:initData});
-    render(s);
+    // Do not overwrite a locally optimistic tap count with an older server snapshot.
+    if(Number(s.coins) >= Number(state.coins)){
+      render(s);
+    }else{
+      state.energy=s.energy;
+      state.max_energy=s.max_energy;
+      state.tap_power=s.tap_power;
+      state.energy_level=s.energy_level;
+      state.referrals=s.referrals;
+      state.is_admin=s.is_admin;
+      state.name=s.name;
+      state.id=s.id;
+      $('energy').textContent=s.energy;
+      $('maxEnergy').textContent=s.max_energy;
+      $('energyBar').style.width=Math.max(0,Math.min(100,s.energy/s.max_energy*100))+'%';
+    }
   }catch(e){console.error(e)}
-},500);
+},2000);
 
 
 const bgMusic = document.getElementById('bgMusic');
@@ -353,11 +438,12 @@ musicBtn.addEventListener('click', function(event){
   window.toggleMusic(event);
 });
 
-// First tap anywhere can start music; clicking the music button itself is handled above.
-document.addEventListener('pointerdown', function firstInteraction(){
+// Music starts from the first coin tap if the browser allows it.
+const originalQueueTap = queueTapOriginal;
+function queueTap(count){
   if(!musicOn) startMusic();
-  document.removeEventListener('pointerdown', firstInteraction);
-}, {passive:true});
+  originalQueueTap(count);
+}
 
 async function init(){
   if(!initData){
