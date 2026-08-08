@@ -7,19 +7,21 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-body{margin:0;background:linear-gradient(180deg,#0d1117,#161b22);color:#fff;font-family:Arial,sans-serif;min-height:100vh}
-.app{max-width:520px;margin:auto;padding:18px 16px 28px}
+html,body{margin:0;min-height:100%;background:#0d1117;color:#fff;font-family:Arial,sans-serif}
+body{min-height:100vh;overflow-x:hidden;transition:background .25s,color .25s}
+.app{max-width:520px;margin:auto;padding:18px 16px 28px;position:relative;z-index:2}
 .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
-.title{font-size:25px;font-weight:800}
+.title{font-size:25px;font-weight:900;letter-spacing:.5px}
+.small{color:#9ca8b8;font-size:13px}
 .card{background:#1b222c;border:1px solid #303946;border-radius:20px;padding:16px;margin-bottom:14px;box-shadow:0 8px 30px #0003}
 .balance{text-align:center;font-size:40px;font-weight:900;margin:5px 0 3px}
 .label{text-align:center;color:#9ca8b8}
 .coin-wrap{display:flex;justify-content:center;align-items:center;height:300px}
-.coin{width:225px;height:225px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none;transition:.08s;filter:drop-shadow(0 0 28px #ff000066)}
-.coin img{width:100%;height:100%;object-fit:contain;border-radius:50%;display:block}
+.coin{width:225px;height:225px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none;touch-action:none;transition:.08s;filter:drop-shadow(0 0 28px #ff000066);overflow:hidden}
+.coin img{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block}
 .coin:active{transform:scale(.92) rotate(-2deg)}
 .energy{height:14px;background:#303846;border-radius:10px;overflow:hidden;margin-top:10px}
-.energy>div{height:100%;background:linear-gradient(90deg,#4fd1c5,#6ee7b7);width:100%;transition:.2s}
+.energy>div{height:100%;background:linear-gradient(90deg,#4fd1c5,#6ee7b7);width:100%;transition:.15s}
 .buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 button{border:0;border-radius:14px;padding:14px;background:#2b3441;color:white;font-size:15px;font-weight:700;cursor:pointer}
 button.primary{background:#f2b90b;color:#171717}
@@ -28,143 +30,291 @@ button:disabled{opacity:.45}
 .panel{display:none}
 .panel.active{display:block}
 .item{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #303846}
-.small{color:#9ca8b8;font-size:13px}
-.float{position:fixed;pointer-events:none;font-weight:900;font-size:23px;animation:up .65s forwards}
+.float{position:fixed;pointer-events:none;font-weight:900;font-size:23px;animation:up .65s forwards;z-index:30;text-shadow:0 2px 8px #000}
 @keyframes up{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-90px)}}
+#easter{display:none;position:fixed;inset:0;z-index:50;background:#000;align-items:center;justify-content:center;overflow:hidden}
+#easter.show{display:flex}
+#easter img{width:min(100vw,100vh);height:min(100vw,100vh);max-width:100%;max-height:100%;object-fit:contain}
+#easter .glitch{position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,transparent 0 5px,rgba(255,0,0,.12) 6px 7px);mix-blend-mode:screen}
+body.evil{background:#000!important;color:#ff1515!important}
+body.evil .card,body.evil button{background:#050505;border-color:#ff1111;color:#fff;box-shadow:0 0 18px #ff000055}
+body.evil .title,body.evil .balance{color:#ff1111}
+body.evil .energy{background:#220000}
+body.evil .energy>div{background:#ff1111}
+.admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.admin-grid input{width:100%;padding:13px;border-radius:12px;border:1px solid #394352;background:#11161d;color:#fff;font-size:15px}
+.admin-grid button{grid-column:1/-1}
+.notice{padding:10px 12px;border-radius:12px;background:#11161d;color:#9ca8b8;font-size:13px;margin-top:10px}
 </style>
 </head>
 <body>
 <div class="app">
-  <div class="header">
-    <div class="title">LARP COIN</div>
-    <div id="name" class="small">Игрок</div>
+<header class="header">
+  <div>
+    <div class="title">🔴 LARP COIN</div>
+    <div class="small" id="name">Загрузка...</div>
   </div>
+  <div class="small" id="myId"></div>
+</header>
 
-  <section id="game" class="panel active">
-    <div class="card">
-      <div class="label">Твои монеты</div>
-      <div id="coins" class="balance">0</div>
-      <div class="coin-wrap">
-        <div id="coin" class="coin"><img src="/static/coin.png" alt="LARP COIN"></div>
+<section id="game" class="panel active">
+  <div class="card">
+    <div class="balance" id="coins">0</div>
+    <div class="label">🪙 монет</div>
+    <div class="coin-wrap">
+      <div class="coin" id="coin">
+        <img src="/static/coin.png" alt="coin">
       </div>
-      <div class="label">⚡ <span id="energy">1000</span> / <span id="maxEnergy">1000</span></div>
-      <div class="energy"><div id="energyBar"></div></div>
     </div>
-    <div class="buttons">
-      <button class="primary" id="tapUpgrade">⚡ +1 к клику</button>
-      <button id="energyUpgrade">🔋 +250 энергии</button>
-    </div>
-  </section>
-
-  <section id="top" class="panel">
-    <div class="card">
-      <h2>🏆 Топ игроков</h2>
-      <div id="leaderboard">Загрузка...</div>
-    </div>
-  </section>
-
-  <section id="ref" class="panel">
-    <div class="card">
-      <h2>👥 Рефералы</h2>
-      <p>Приглашай друзей и получай бонусы в LARP COIN.</p>
-      <div class="item"><span>Твои рефералы</span><b id="refs">0</b></div>
-      <button class="primary" id="share">📤 Пригласить друга</button>
-    </div>
-  </section>
-
-  <div class="nav">
-    <button onclick="showPanel('game')">🪙 Игра</button>
-    <button onclick="showPanel('top');loadTop()">🏆 Топ</button>
-    <button onclick="showPanel('ref')">👥 Рефы</button>
+    <div class="item"><span>⚡ Энергия</span><b><span id="energy">0</span> / <span id="maxEnergy">0</span></b></div>
+    <div class="energy"><div id="energyBar"></div></div>
   </div>
+
+  <div class="card">
+    <div class="buttons">
+      <button class="primary" id="tapUpgrade">⚡ Улучшить клик</button>
+      <button class="primary" id="energyUpgrade">🔋 Улучшить энергию</button>
+    </div>
+  </div>
+</section>
+
+<section id="top" class="panel">
+  <div class="card">
+    <h2>🏆 Топ игроков</h2>
+    <div id="leaderboard"></div>
+  </div>
+</section>
+
+<section id="ref" class="panel">
+  <div class="card">
+    <h2>👥 Рефералы</h2>
+    <p>Приглашай друзей и получай бонусы в LARP COIN.</p>
+    <div class="item"><span>Твои рефералы</span><b id="refs">0</b></div>
+    <button class="primary" id="share">📤 Пригласить друга</button>
+  </div>
+</section>
+
+<section id="admin" class="panel">
+  <div class="card">
+    <h2>🛠 Админка</h2>
+    <div class="small">Выдача коинов по Telegram ID.</div>
+    <div class="admin-grid" style="margin-top:12px">
+      <input id="targetId" inputmode="numeric" placeholder="Telegram ID">
+      <input id="grantAmount" inputmode="numeric" placeholder="Количество">
+      <button class="primary" id="grantBtn">💰 Выдать коины</button>
+    </div>
+    <div id="grantResult" class="notice">Только для администратора.</div>
+  </div>
+</section>
+
+<div class="nav">
+  <button onclick="showPanel('game')">🪙 Игра</button>
+  <button onclick="showPanel('top');loadTop()">🏆 Топ</button>
+  <button onclick="showPanel('ref')">👥 Рефы</button>
+  <button id="adminNav" style="display:none" onclick="showPanel('admin')">🛠 Админ</button>
+</div>
+</div>
+
+<div id="easter">
+  <img src="/static/coin.png" id="easterImg" alt="">
+  <div class="glitch"></div>
 </div>
 
 <script>
-const tg = window.Telegram.WebApp;
-tg.ready(); tg.expand();
+const tg=window.Telegram.WebApp;
+tg.ready();tg.expand();
 
-let initData = tg.initData;
-let state = null;
-let busy = false;
+const initData=tg.initData;
+let state=null;
+let evilTimer=null;
+let tapQueue=0;
+let sending=false;
+
+const EASTER=[333,3333,33333,333333];
 
 function $(id){return document.getElementById(id)}
+
 function render(s){
+  const oldCoins=state?.coins;
   state=s;
+
   $('name').textContent=s.name;
-  $('coins').textContent=s.coins.toLocaleString('ru-RU');
+  $('myId').textContent='ID: '+s.id;
+  $('coins').textContent=Number(s.coins).toLocaleString('ru-RU');
   $('energy').textContent=s.energy;
   $('maxEnergy').textContent=s.max_energy;
   $('refs').textContent=s.referrals;
   $('energyBar').style.width=Math.max(0,Math.min(100,s.energy/s.max_energy*100))+'%';
   $('tapUpgrade').textContent=`⚡ +1 к клику (${100*s.tap_power*s.tap_power} 🪙)`;
   $('energyUpgrade').textContent=`🔋 +250 энергии (${150*s.energy_level*s.energy_level} 🪙)`;
+
+  if(s.is_admin){
+    $('adminNav').style.display='block';
+  }
+
+  if(oldCoins!==s.coins && EASTER.includes(Number(s.coins))){
+    triggerEaster();
+  }
 }
 
-async function api(path, body){
-  const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const data=await r.json();
-  if(!r.ok) throw new Error(data.detail || 'Ошибка');
+async function api(path,body){
+  const r=await fetch(path,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)
+  });
+  const data=await r.json().catch(()=>({detail:'Ошибка сервера'}));
+  if(!r.ok)throw new Error(data.detail||'Ошибка');
   return data;
 }
+
+function triggerEaster(){
+  clearTimeout(evilTimer);
+  document.body.classList.add('evil');
+  $('easter').classList.add('show');
+  if(navigator.vibrate)navigator.vibrate([80,50,120]);
+
+  evilTimer=setTimeout(()=>{
+    $('easter').classList.remove('show');
+    document.body.classList.remove('evil');
+  },5000);
+}
+
+async function sendTap(taps,x,y){
+  if(!state || taps<=0)return;
+
+  const actual=Math.min(taps,state.energy);
+  if(actual<=0)return;
+
+  const f=document.createElement('div');
+  f.className='float';
+  f.textContent='+'+(actual*state.tap_power)+' 🪙';
+  f.style.left=x+'px';
+  f.style.top=y+'px';
+  document.body.appendChild(f);
+  setTimeout(()=>f.remove(),700);
+
+  try{
+    const s=await api('/api/tap',{init_data:initData,taps:actual});
+    render(s);
+  }catch(err){
+    console.error(err);
+  }
+}
+
+$('coin').addEventListener('pointerdown',async e=>{
+  e.preventDefault();
+
+  if(!state || state.energy<=0)return;
+
+  // Every physical pointer is counted. Four simultaneous fingers = 4 taps.
+  tapQueue++;
+  const x=e.clientX;
+  const y=e.clientY;
+
+  if(sending)return;
+  sending=true;
+
+  while(tapQueue>0){
+    const count=tapQueue;
+    tapQueue=0;
+    await sendTap(count,x,y);
+  }
+
+  sending=false;
+});
+
+$('tapUpgrade').onclick=async()=>{
+  try{render(await api('/api/upgrade',{init_data:initData,kind:'tap'}))}
+  catch(e){tg.showAlert(e.message)}
+};
+
+$('energyUpgrade').onclick=async()=>{
+  try{render(await api('/api/upgrade',{init_data:initData,kind:'energy'}))}
+  catch(e){tg.showAlert(e.message)}
+};
+
+async function loadTop(){
+  try{
+    const data=await fetch('/api/leaderboard').then(r=>r.json());
+    $('leaderboard').innerHTML=data.map((x,i)=>`
+      <div class="item">
+        <span>${i+1}. ${escapeHtml(x.name)}</span>
+        <b>${Number(x.coins).toLocaleString('ru-RU')} 🪙</b>
+      </div>
+    `).join('');
+  }catch(e){
+    $('leaderboard').textContent='Ошибка загрузки топа';
+  }
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g,m=>({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
+  }[m]));
+}
+
+function showPanel(id){
+  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
+  $(id).classList.add('active');
+}
+
+$('share').onclick=()=>{
+  if(!state)return;
+
+  const botLink=`https://t.me/larpcoin333bot?start=ref_${state.id}`;
+  const text='🔴 Заходи в LARP COIN и получи бонус!';
+
+  // This opens Telegram's share sheet with the REAL bot link.
+  const shareLink=`https://t.me/share/url?url=${encodeURIComponent(botLink)}&text=${encodeURIComponent(text)}`;
+  tg.openTelegramLink(shareLink);
+};
+
+$('grantBtn').onclick=async()=>{
+  const target=Number($('targetId').value);
+  const amount=Number($('grantAmount').value);
+
+  if(!Number.isInteger(target)||target<=0||!Number.isInteger(amount)||amount<=0){
+    $('grantResult').textContent='Введи корректный ID и положительное количество коинов.';
+    return;
+  }
+
+  try{
+    const s=await api('/api/admin/grant',{
+      init_data:initData,
+      target_id:target,
+      amount:amount
+    });
+    $('grantResult').textContent=
+      `Готово: пользователю ${target} выдано ${amount.toLocaleString('ru-RU')} 🪙. Сейчас у него ${Number(s.coins).toLocaleString('ru-RU')} 🪙.`;
+  }catch(e){
+    $('grantResult').textContent='Ошибка: '+e.message;
+  }
+};
+
+setInterval(async()=>{
+  if(!state)return;
+  try{
+    const s=await api('/api/state',{init_data:initData});
+    render(s);
+  }catch(e){console.error(e)}
+},500);
 
 async function init(){
   if(!initData){
     document.body.innerHTML='<div style="padding:30px;color:white;font-family:Arial">Открой игру через Telegram.</div>';
     return;
   }
+
   try{
     const p=new URLSearchParams(location.search);
-    const start =
-  p.get('ref') ||
-  p.get('tgWebAppStartParam') ||
-  tg.initDataUnsafe?.start_param ||
-  null;
+    const start=p.get('ref')||p.get('tgWebAppStartParam')||tg.initDataUnsafe?.start_param||null;
     render(await api('/api/init',{init_data:initData,start_param:start}));
-  }catch(e){ alert(e.message); }
+  }catch(e){
+    tg.showAlert(e.message);
+  }
 }
 
-$('coin').addEventListener('pointerdown', async (e)=>{
-  if(busy || !state || state.energy<=0) return;
-  busy=true;
-  try{
-    const x=e.clientX,y=e.clientY;
-    const f=document.createElement('div'); f.className='float'; f.textContent='+'+state.tap_power+' 🪙';
-    f.style.left=x+'px'; f.style.top=y+'px'; document.body.appendChild(f);
-    setTimeout(()=>f.remove(),700);
-    render(await api('/api/tap',{init_data:initData,taps:1}));
-  }catch(e){console.error(e)}
-  busy=false;
-});
-
-$('tapUpgrade').onclick=async()=>{
-  try{render(await api('/api/upgrade',{init_data:initData,kind:'tap'}));}
-  catch(e){tg.showAlert(e.message)}
-};
-$('energyUpgrade').onclick=async()=>{
-  try{render(await api('/api/upgrade',{init_data:initData,kind:'energy'}));}
-  catch(e){tg.showAlert(e.message)}
-};
-
-async function loadTop(){
-  const data=await fetch('/api/leaderboard').then(r=>r.json());
-  $('leaderboard').innerHTML=data.map((x,i)=>`
-    <div class="item"><span>${i+1}. ${escapeHtml(x.name)}</span><b>${x.coins.toLocaleString('ru-RU')} 🪙</b></div>
-  `).join('');
-}
-function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
-function showPanel(id){
-  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
-  $(id).classList.add('active');
-}
-$('share').onclick=()=>{
-  if(!state) return;
-
-  const botLink=`https://t.me/larpcoin333bot?start=ref_${state.id}`;
-  const shareLink=`https://t.me/share/url?url=${encodeURIComponent(botLink)}&text=${encodeURIComponent('🔴 Заходи в LARP COIN и получи бонус!')}`;
-
-  tg.openTelegramLink(shareLink);
-};
-setInterval(()=>{if(state){render({...state,energy:Math.min(state.max_energy,state.energy+1)})}},1000);
 init();
 </script>
 </body>
