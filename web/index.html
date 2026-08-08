@@ -44,7 +44,7 @@ body.evil .energy>div{background:#ff1111}
 .admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .admin-grid input{width:100%;padding:13px;border-radius:12px;border:1px solid #394352;background:#11161d;color:#fff;font-size:15px}
 .admin-grid button{grid-column:1/-1}
-.notice{padding:10px 12px;border-radius:12px;background:#11161d;color:#9ca8b8;font-size:13px;margin-top:10px}
+#musicBtn{border:1px solid #394352;background:#1b222c;color:#fff;min-width:42px;cursor:pointer}\n#musicBtn:active{transform:scale(.94)}\n.notice{padding:10px 12px;border-radius:12px;background:#11161d;color:#9ca8b8;font-size:13px;margin-top:10px}
 </style>
 </head>
 <body>
@@ -54,7 +54,7 @@ body.evil .energy>div{background:#ff1111}
     <div class="title">🔴 LARP COIN</div>
     <div class="small" id="name">Загрузка...</div>
   </div>
-  <div class="small" id="myId"></div>
+  <div style="display:flex;align-items:center;gap:8px"><button id="musicBtn" style="padding:9px 11px;border-radius:12px;font-size:18px">🔇</button><div class="small" id="myId"></div></div>
 </header>
 
 <section id="game" class="panel active">
@@ -115,6 +115,10 @@ body.evil .energy>div{background:#ff1111}
 </div>
 </div>
 
+<audio id="bgMusic" loop preload="auto">
+  <source src="/static/music.mp3" type="audio/mpeg">
+</audio>
+
 <div id="easter">
   <img src="/static/coin.png" id="easterImg" alt="">
   <div class="glitch"></div>
@@ -127,8 +131,7 @@ tg.ready();tg.expand();
 const initData=tg.initData;
 let state=null;
 let evilTimer=null;
-let pendingTaps=0;
-let flushTimer=null;
+let tapQueue=0;
 let sending=false;
 
 const EASTER=[333,3333,33333,333333];
@@ -149,67 +152,13 @@ function render(s){
   $('tapUpgrade').textContent=`⚡ +1 к клику (${100*s.tap_power*s.tap_power} 🪙)`;
   $('energyUpgrade').textContent=`🔋 +250 энергии (${150*s.energy_level*s.energy_level} 🪙)`;
 
-  if(s.is_admin) $('adminNav').style.display='block';
+  if(s.is_admin){
+    $('adminNav').style.display='block';
+  }
 
-  if(oldCoins!==undefined && oldCoins!==s.coins && EASTER.includes(Number(s.coins))){
+  if(oldCoins!==s.coins && EASTER.includes(Number(s.coins))){
     triggerEaster();
   }
-}
-
-function optimisticTap(count,x,y){
-  if(!state || count<=0)return 0;
-  const actual=Math.min(count,Math.floor(Number(state.energy)));
-  if(actual<=0)return 0;
-
-  const gained=actual*Number(state.tap_power);
-  state.coins=Number(state.coins)+gained;
-  state.max_coins=Math.max(Number(state.max_coins||0),state.coins);
-  state.energy=Number(state.energy)-actual;
-  $('coins').textContent=Number(state.coins).toLocaleString('ru-RU');
-  $('energy').textContent=state.energy;
-  $('energyBar').style.width=Math.max(0,Math.min(100,state.energy/state.max_energy*100))+'%';
-
-  const f=document.createElement('div');
-  f.className='float';
-  f.textContent='+'+gained.toLocaleString('ru-RU')+' 🪙';
-  f.style.left=x+'px';
-  f.style.top=y+'px';
-  document.body.appendChild(f);
-  setTimeout(()=>f.remove(),700);
-
-  if(EASTER.includes(Number(state.coins))) triggerEaster();
-  return actual;
-}
-
-async function flushTaps(){
-  if(sending || pendingTaps<=0 || !state)return;
-  sending=true;
-  const count=Math.min(pendingTaps,20);
-  pendingTaps-=count;
-
-  try{
-    const serverState=await api('/api/tap',{init_data:initData,taps:count});
-    // Server is authoritative. The UI was already updated instantly, so this
-    // only reconciles the final values after the batch reaches the server.
-    render(serverState);
-  }catch(err){
-    console.error(err);
-    // If the request failed, refresh the real state instead of leaving a fake balance.
-    try{ render(await api('/api/state',{init_data:initData})); }catch(e){ console.error(e); }
-  }finally{
-    sending=false;
-    if(pendingTaps>0) flushTaps();
-  }
-}
-
-function queueTap(x,y){
-  if(!state || state.energy<=0)return;
-  const actual=optimisticTap(1,x,y);
-  if(actual<=0)return;
-  pendingTaps+=actual;
-  clearTimeout(flushTimer);
-  // Small debounce groups very fast taps/fingers into one request.
-  flushTimer=setTimeout(flushTaps,60);
 }
 
 async function api(path,body){
@@ -235,9 +184,48 @@ function triggerEaster(){
   },5000);
 }
 
-$('coin').addEventListener('pointerdown',e=>{
+async function sendTap(taps,x,y){
+  if(!state || taps<=0)return;
+
+  const actual=Math.min(taps,state.energy);
+  if(actual<=0)return;
+
+  const f=document.createElement('div');
+  f.className='float';
+  f.textContent='+'+(actual*state.tap_power)+' 🪙';
+  f.style.left=x+'px';
+  f.style.top=y+'px';
+  document.body.appendChild(f);
+  setTimeout(()=>f.remove(),700);
+
+  try{
+    const s=await api('/api/tap',{init_data:initData,taps:actual});
+    render(s);
+  }catch(err){
+    console.error(err);
+  }
+}
+
+$('coin').addEventListener('pointerdown',async e=>{
   e.preventDefault();
-  queueTap(e.clientX,e.clientY);
+
+  if(!state || state.energy<=0)return;
+
+  // Every physical pointer is counted. Four simultaneous fingers = 4 taps.
+  tapQueue++;
+  const x=e.clientX;
+  const y=e.clientY;
+
+  if(sending)return;
+  sending=true;
+
+  while(tapQueue>0){
+    const count=tapQueue;
+    tapQueue=0;
+    await sendTap(count,x,y);
+  }
+
+  sending=false;
 });
 
 $('tapUpgrade').onclick=async()=>{
@@ -314,7 +302,41 @@ setInterval(async()=>{
     const s=await api('/api/state',{init_data:initData});
     render(s);
   }catch(e){console.error(e)}
-},2000);
+},500);
+
+
+const bgMusic = $('bgMusic');
+const musicBtn = $('musicBtn');
+let musicOn = false;
+
+// Browser/Telegram may block autoplay until the user interacts.
+async function startMusic(){
+  try{
+    await bgMusic.play();
+    musicOn = true;
+    musicBtn.textContent = '🔊';
+  }catch(e){
+    musicOn = false;
+    musicBtn.textContent = '🔇';
+  }
+}
+
+function stopMusic(){
+  bgMusic.pause();
+  musicOn = false;
+  musicBtn.textContent = '🔇';
+}
+
+$('musicBtn').onclick = async (e)=>{
+  e.stopPropagation();
+  if(musicOn) stopMusic();
+  else await startMusic();
+};
+
+// Start after the first user interaction, if the player hasn't muted it.
+document.addEventListener('pointerdown', ()=>{
+  if(!musicOn) startMusic();
+}, {once:true});
 
 async function init(){
   if(!initData){
