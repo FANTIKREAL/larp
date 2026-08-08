@@ -114,7 +114,11 @@ async function init(){
   }
   try{
     const p=new URLSearchParams(location.search);
-    const start=p.get('tgWebAppStartParam') || tg.initDataUnsafe?.start_param || null;
+    const start =
+  p.get('ref') ||
+  p.get('tgWebAppStartParam') ||
+  tg.initDataUnsafe?.start_param ||
+  null;
     render(await api('/api/init',{init_data:initData,start_param:start}));
   }catch(e){ alert(e.message); }
 }
