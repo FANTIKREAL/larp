@@ -3,9 +3,9 @@ import time
 import hmac
 import json
 import hashlib
-import sqlite3
 from urllib.parse import parse_qsl
 
+import psycopg
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -15,56 +15,49 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-DB_PATH = os.getenv("DB_PATH", "tapalka.db")
-
-# В Render -> Environment Variables:
-# ADMIN_IDS = "123456789,987654321"
-def admin_ids():
-    raw = os.getenv("ADMIN_IDS", "")
-    return {int(x.strip()) for x in raw.split(",") if x.strip().isdigit()}
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+ADMIN_IDS = {
+    int(x.strip())
+    for x in os.getenv("ADMIN_IDS", "").split(",")
+    if x.strip().isdigit()
+}
 
 app = FastAPI(title="LARP COIN")
 app.mount("/static", StaticFiles(directory="web"), name="static")
 
 
 def db():
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    return con
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL is not set")
+    return psycopg.connect(DATABASE_URL)
 
 
 def init_db():
-    con = db()
-    con.executescript("""
-    CREATE TABLE IF NOT EXISTS users (
-        tg_id INTEGER PRIMARY KEY,
-        username TEXT DEFAULT '',
-        first_name TEXT DEFAULT '',
-        coins INTEGER DEFAULT 0,
-        best_coins INTEGER DEFAULT 0,
-        energy INTEGER DEFAULT 1000,
-        max_energy INTEGER DEFAULT 1000,
-        tap_power INTEGER DEFAULT 1,
-        energy_level INTEGER DEFAULT 1,
-        last_energy_ts INTEGER DEFAULT 0,
-        referred_by INTEGER DEFAULT NULL,
-        referrals INTEGER DEFAULT 0,
-        created_at INTEGER DEFAULT 0
-    );
-    CREATE INDEX IF NOT EXISTS idx_users_best_coins ON users(best_coins DESC);
-    """)
-    cols = {r["name"] for r in con.execute("PRAGMA table_info(users)").fetchall()}
-    if "best_coins" not in cols:
-        con.execute("ALTER TABLE users ADD COLUMN best_coins INTEGER DEFAULT 0")
-    # Старые значения времени были в секундах. Переводим их в миллисекунды.
-    con.execute("""
-        UPDATE users
-        SET last_energy_ts = last_energy_ts * 1000
-        WHERE last_energy_ts > 0 AND last_energy_ts < 100000000000
-    """)
-    con.execute("UPDATE users SET best_coins=coins WHERE best_coins < coins")
-    con.commit()
-    con.close()
+    with db() as con:
+        # Existing Neon project uses table "players".
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS players (
+                telegram_id BIGINT PRIMARY KEY,
+                coins BIGINT NOT NULL DEFAULT 0,
+                max_coins BIGINT NOT NULL DEFAULT 0,
+                energy INTEGER NOT NULL DEFAULT 1000,
+                max_energy INTEGER NOT NULL DEFAULT 1000,
+                referrals INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        # Safe additions for the game.
+        con.execute("ALTER TABLE players ADD COLUMN IF NOT EXISTS username TEXT NOT NULL DEFAULT ''")
+        con.execute("ALTER TABLE players ADD COLUMN IF NOT EXISTS first_name TEXT NOT NULL DEFAULT ''")
+        con.execute("ALTER TABLE players ADD COLUMN IF NOT EXISTS tap_power INTEGER NOT NULL DEFAULT 1")
+        con.execute("ALTER TABLE players ADD COLUMN IF NOT EXISTS energy_level INTEGER NOT NULL DEFAULT 1")
+        con.execute("ALTER TABLE players ADD COLUMN IF NOT EXISTS last_energy_ts BIGINT NOT NULL DEFAULT 0")
+        con.execute("ALTER TABLE players ADD COLUMN IF NOT EXISTS referred_by BIGINT")
+        con.execute("ALTER TABLE players ADD COLUMN IF NOT EXISTS created_at BIGINT NOT NULL DEFAULT 0")
+        con.execute("UPDATE players SET max_coins = GREATEST(max_coins, coins)")
+        con.execute("""
+            CREATE INDEX IF NOT EXISTS idx_players_max_coins
+            ON players(max_coins DESC)
+        """)
 
 
 init_db()
@@ -72,14 +65,18 @@ init_db()
 
 def check_init_data(init_data: str):
     if not BOT_TOKEN or not init_data:
-        raise HTTPException(401, "Invalid init data")
+        raise HTTPException(401, "Не удалось проверить Telegram")
 
     data = dict(parse_qsl(init_data, keep_blank_values=True))
     received_hash = data.pop("hash", None)
     if not received_hash:
         raise HTTPException(401, "Missing hash")
 
-    auth_date = int(data.get("auth_date", "0"))
+    try:
+        auth_date = int(data.get("auth_date", "0"))
+    except ValueError:
+        raise HTTPException(401, "Bad auth_date")
+
     if time.time() - auth_date > 86400:
         raise HTTPException(401, "Init data expired")
 
@@ -94,94 +91,150 @@ def check_init_data(init_data: str):
     if not hmac.compare_digest(calculated, received_hash):
         raise HTTPException(401, "Invalid signature")
 
-    user = json.loads(data.get("user", "{}"))
+    try:
+        user = json.loads(data.get("user", "{}"))
+    except json.JSONDecodeError:
+        raise HTTPException(401, "Bad Telegram user data")
+
     if not user.get("id"):
         raise HTTPException(401, "User not found")
     return user
 
 
-def get_user(tg_id):
-    con = db()
-    row = con.execute("SELECT * FROM users WHERE tg_id=?", (tg_id,)).fetchone()
-    con.close()
-    return row
+def regenerate_values(energy, max_energy, last_ts):
+    now = int(time.time() * 1000)
+    last = int(last_ts or now)
+    elapsed = max(0, now - last)
+    gained = elapsed // 500  # 1 energy every 0.5 sec
+
+    if gained <= 0:
+        return int(energy), last
+
+    new_energy = min(int(max_energy), int(energy) + int(gained))
+    if new_energy >= int(max_energy):
+        new_last = now
+    else:
+        new_last = last + int(gained) * 500
+
+    return new_energy, new_last
 
 
-def create_user(user, referral_code=None):
+def ensure_user(user, referral_code=None):
     tg_id = int(user["id"])
     now = int(time.time() * 1000)
 
-    con = db()
-    existing = con.execute(
-        "SELECT tg_id FROM users WHERE tg_id=?", (tg_id,)
-    ).fetchone()
+    with db() as con:
+        row = con.execute(
+            "SELECT telegram_id FROM players WHERE telegram_id=%s",
+            (tg_id,),
+        ).fetchone()
 
-    if not existing:
-        ref = None
-        if referral_code and str(referral_code).isdigit():
-            ref_candidate = int(referral_code)
-            if (
-                ref_candidate != tg_id
-                and con.execute(
-                    "SELECT tg_id FROM users WHERE tg_id=?", (ref_candidate,)
-                ).fetchone()
-            ):
-                ref = ref_candidate
+        if row:
+            con.execute(
+                "UPDATE players SET username=%s, first_name=%s WHERE telegram_id=%s",
+                (user.get("username", ""), user.get("first_name", ""), tg_id),
+            )
+            return
+
+        ref_id = None
+        if referral_code:
+            raw = str(referral_code)
+            if raw.startswith("ref_"):
+                raw = raw[4:]
+            if raw.isdigit():
+                candidate = int(raw)
+                if candidate != tg_id:
+                    exists = con.execute(
+                        "SELECT telegram_id FROM players WHERE telegram_id=%s",
+                        (candidate,),
+                    ).fetchone()
+                    if exists:
+                        ref_id = candidate
 
         con.execute(
-            """INSERT INTO users
-            (tg_id, username, first_name, coins, best_coins, energy,
-             max_energy, tap_power, energy_level, last_energy_ts,
-             referred_by, created_at)
-            VALUES (?, ?, ?, 0, 0, 1000, 1000, 1, 1, ?, ?, ?)""",
+            """
+            INSERT INTO players
+            (telegram_id, username, first_name, coins, max_coins, energy,
+             max_energy, referrals, tap_power, energy_level,
+             last_energy_ts, referred_by, created_at)
+            VALUES (%s,%s,%s,0,0,1000,1000,0,1,1,%s,%s,%s)
+            """,
             (
                 tg_id,
                 user.get("username", ""),
                 user.get("first_name", ""),
                 now,
-                ref,
+                ref_id,
                 now,
             ),
         )
 
-        if ref:
-            # Реферальный бонус тоже влияет на рекорд.
+        if ref_id:
+            # One-time referral reward.
             con.execute(
-                """UPDATE users
-                   SET referrals=referrals+1,
-                       coins=coins+1000,
-                       best_coins=MAX(best_coins, coins+1000)
-                   WHERE tg_id=?""",
-                (ref,),
+                """
+                UPDATE players
+                SET referrals = referrals + 1,
+                    coins = coins + 1000,
+                    max_coins = GREATEST(max_coins, coins + 1000)
+                WHERE telegram_id=%s
+                """,
+                (ref_id,),
             )
 
-    con.commit()
-    con.close()
 
+def get_state(tg_id):
+    with db() as con:
+        row = con.execute(
+            "SELECT * FROM players WHERE telegram_id=%s",
+            (tg_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "Пользователь не найден")
 
-def regenerate(row):
-    now = int(time.time() * 1000)
-    last = int(row["last_energy_ts"] or now)
-    elapsed = max(0, now - last)
+        cols = [d.name for d in con.info.get_result_formats()] if False else None
+        # Dict-like access is unavailable by default, so use a named query.
+        r = con.execute(
+            """
+            SELECT telegram_id, username, first_name, coins, max_coins,
+                   energy, max_energy, tap_power, energy_level, referrals
+            FROM players WHERE telegram_id=%s
+            """,
+            (tg_id,),
+        ).fetchone()
 
-    # 1 энергия каждые 0.5 секунды.
-    gained = elapsed // 500
-    if gained <= 0:
-        return int(row["energy"]), last
+        # Re-read energy through a transaction-safe update.
+        e_row = con.execute(
+            "SELECT energy,max_energy,last_energy_ts FROM players WHERE telegram_id=%s",
+            (tg_id,),
+        ).fetchone()
+        energy, new_ts = regenerate_values(e_row[0], e_row[1], e_row[2])
+        con.execute(
+            "UPDATE players SET energy=%s,last_energy_ts=%s WHERE telegram_id=%s",
+            (energy, new_ts, tg_id),
+        )
 
-    energy = min(int(row["max_energy"]), int(row["energy"]) + int(gained))
-
-    if energy >= int(row["max_energy"]):
-        new_last = now
-    else:
-        new_last = last + int(gained) * 500
-
-    return energy, new_last
+        return {
+            "id": r[0],
+            "name": r[2] or r[1] or "Игрок",
+            "coins": int(r[3]),
+            "best_coins": int(r[4]),
+            "energy": int(energy),
+            "max_energy": int(r[5]),
+            "tap_power": int(r[7]),
+            "energy_level": int(r[8]),
+            "referrals": int(r[9]),
+            "is_admin": tg_id in ADMIN_IDS,
+        }
 
 
 class InitRequest(BaseModel):
     init_data: str
     start_param: str | None = None
+
+
+class StateRequest(BaseModel):
+    init_data: str
 
 
 class TapRequest(BaseModel):
@@ -192,10 +245,6 @@ class TapRequest(BaseModel):
 class UpgradeRequest(BaseModel):
     init_data: str
     kind: str
-
-
-class StateRequest(BaseModel):
-    init_data: str
 
 
 class GrantRequest(BaseModel):
@@ -209,170 +258,116 @@ def index():
     return FileResponse("web/index.html")
 
 
-def save_energy(tg_id, energy, ts):
-    con = db()
-    con.execute(
-        "UPDATE users SET energy=?, last_energy_ts=? WHERE tg_id=?",
-        (energy, ts, tg_id),
-    )
-    con.commit()
-    con.close()
-
-
-def state(tg_id):
-    row = get_user(tg_id)
-    if not row:
-        raise HTTPException(404, "User not found")
-
-    energy, ts = regenerate(row)
-    save_energy(tg_id, energy, ts)
-    row = get_user(tg_id)
-
-    return {
-        "id": row["tg_id"],
-        "name": row["first_name"] or row["username"] or "Игрок",
-        "coins": row["coins"],
-        "best_coins": row["best_coins"],
-        "energy": row["energy"],
-        "max_energy": row["max_energy"],
-        "tap_power": row["tap_power"],
-        "energy_level": row["energy_level"],
-        "referrals": row["referrals"],
-        "is_admin": row["tg_id"] in admin_ids(),
-    }
-
-
 @app.post("/api/init")
 def api_init(req: InitRequest):
     user = check_init_data(req.init_data)
-    create_user(user, req.start_param)
-    tg_id = int(user["id"])
-
-    row = get_user(tg_id)
-    energy, ts = regenerate(row)
-    con = db()
-    con.execute(
-        """UPDATE users
-           SET energy=?, last_energy_ts=?, username=?, first_name=?
-           WHERE tg_id=?""",
-        (
-            energy,
-            ts,
-            user.get("username", ""),
-            user.get("first_name", ""),
-            tg_id,
-        ),
-    )
-    con.commit()
-    con.close()
-
-    return state(tg_id)
+    ensure_user(user, req.start_param)
+    return get_state(int(user["id"]))
 
 
 @app.post("/api/state")
 def api_state(req: StateRequest):
     user = check_init_data(req.init_data)
-    return state(int(user["id"]))
+    return get_state(int(user["id"]))
 
 
 @app.post("/api/tap")
-def tap(req: TapRequest):
+def api_tap(req: TapRequest):
     if req.taps < 1 or req.taps > 20:
         raise HTTPException(400, "Bad tap count")
 
     user = check_init_data(req.init_data)
     tg_id = int(user["id"])
+    ensure_user(user)
 
-    row = get_user(tg_id)
-    if not row:
-        create_user(user)
-        row = get_user(tg_id)
+    with db() as con:
+        row = con.execute(
+            """
+            SELECT coins,max_coins,energy,max_energy,tap_power,last_energy_ts
+            FROM players WHERE telegram_id=%s FOR UPDATE
+            """,
+            (tg_id,),
+        ).fetchone()
+        energy, ts = regenerate_values(row[2], row[3], row[5])
+        actual = min(int(req.taps), int(energy))
+        gained = actual * int(row[4])
+        new_coins = int(row[0]) + gained
+        new_best = max(int(row[1]), new_coins)
 
-    energy, ts = regenerate(row)
-    actual = min(int(req.taps), int(energy))
-    gained = actual * int(row["tap_power"])
+        con.execute(
+            """
+            UPDATE players
+            SET coins=%s,max_coins=%s,energy=%s,last_energy_ts=%s
+            WHERE telegram_id=%s
+            """,
+            (new_coins, new_best, energy - actual, ts, tg_id),
+        )
 
-    new_coins = int(row["coins"]) + gained
-    new_best = max(int(row["best_coins"]), new_coins)
-
-    con = db()
-    con.execute(
-        """UPDATE users
-           SET coins=?, best_coins=?, energy=?, last_energy_ts=?
-           WHERE tg_id=?""",
-        (new_coins, new_best, energy - actual, ts, tg_id),
-    )
-    con.commit()
-    con.close()
-
-    return state(tg_id)
+    return get_state(tg_id)
 
 
 @app.post("/api/upgrade")
-def upgrade(req: UpgradeRequest):
+def api_upgrade(req: UpgradeRequest):
     user = check_init_data(req.init_data)
     tg_id = int(user["id"])
-    row = get_user(tg_id)
+    ensure_user(user)
 
-    if not row:
-        create_user(user)
-        row = get_user(tg_id)
+    with db() as con:
+        row = con.execute(
+            """
+            SELECT coins,max_coins,tap_power,energy_level,max_energy
+            FROM players WHERE telegram_id=%s FOR UPDATE
+            """,
+            (tg_id,),
+        ).fetchone()
 
-    if req.kind == "tap":
-        level = int(row["tap_power"])
-        cost = 100 * (level ** 2)
+        if req.kind == "tap":
+            level = int(row[2])
+            cost = 100 * (level ** 2)
+            if int(row[0]) < cost:
+                raise HTTPException(400, "Недостаточно монет")
+            con.execute(
+                "UPDATE players SET coins=coins-%s,tap_power=tap_power+1 WHERE telegram_id=%s",
+                (cost, tg_id),
+            )
 
-        if row["coins"] < cost:
-            raise HTTPException(400, "Недостаточно монет")
+        elif req.kind == "energy":
+            level = int(row[3])
+            cost = 150 * (level ** 2)
+            if int(row[0]) < cost:
+                raise HTTPException(400, "Недостаточно монет")
+            con.execute(
+                """
+                UPDATE players
+                SET coins=coins-%s,
+                    energy_level=energy_level+1,
+                    max_energy=max_energy+250
+                WHERE telegram_id=%s
+                """,
+                (cost, tg_id),
+            )
+        else:
+            raise HTTPException(400, "Unknown upgrade")
 
-        con = db()
-        con.execute(
-            "UPDATE users SET coins=coins-?, tap_power=tap_power+1 WHERE tg_id=?",
-            (cost, tg_id),
-        )
-
-    elif req.kind == "energy":
-        level = int(row["energy_level"])
-        cost = 150 * (level ** 2)
-
-        if row["coins"] < cost:
-            raise HTTPException(400, "Недостаточно монет")
-
-        con = db()
-        con.execute(
-            """UPDATE users
-               SET coins=coins-?,
-                   energy_level=energy_level+1,
-                   max_energy=max_energy+250
-               WHERE tg_id=?""",
-            (cost, tg_id),
-        )
-
-    else:
-        raise HTTPException(400, "Unknown upgrade")
-
-    con.commit()
-    con.close()
-
-    # best_coins специально НЕ уменьшается после покупки.
-    return state(tg_id)
+    return get_state(tg_id)
 
 
 @app.get("/api/leaderboard")
 def leaderboard():
-    con = db()
-    rows = con.execute(
-        """SELECT first_name, username, best_coins
-           FROM users
-           ORDER BY best_coins DESC, tg_id ASC
-           LIMIT 20"""
-    ).fetchall()
-    con.close()
+    with db() as con:
+        rows = con.execute(
+            """
+            SELECT first_name,username,max_coins
+            FROM players
+            ORDER BY max_coins DESC,telegram_id ASC
+            LIMIT 20
+            """
+        ).fetchall()
 
     return [
         {
-            "name": r["first_name"] or r["username"] or "Игрок",
-            "coins": r["best_coins"],
+            "name": r[0] or r[1] or "Игрок",
+            "coins": int(r[2]),
         }
         for r in rows
     ]
@@ -383,25 +378,29 @@ def admin_grant(req: GrantRequest):
     admin = check_init_data(req.init_data)
     admin_id = int(admin["id"])
 
-    if admin_id not in admin_ids():
+    if admin_id not in ADMIN_IDS:
         raise HTTPException(403, "Нет доступа к админке")
-
     if req.target_id <= 0 or req.amount <= 0:
         raise HTTPException(400, "ID и количество должны быть положительными")
 
-    target = get_user(req.target_id)
-    if not target:
-        raise HTTPException(404, "Пользователь с таким Telegram ID ещё не запускал игру")
+    with db() as con:
+        target = con.execute(
+            "SELECT coins,max_coins FROM players WHERE telegram_id=%s FOR UPDATE",
+            (req.target_id,),
+        ).fetchone()
 
-    new_coins = int(target["coins"]) + int(req.amount)
-    new_best = max(int(target["best_coins"]), new_coins)
+        if not target:
+            raise HTTPException(
+                404,
+                "Пользователь с таким Telegram ID ещё не запускал игру",
+            )
 
-    con = db()
-    con.execute(
-        "UPDATE users SET coins=?, best_coins=? WHERE tg_id=?",
-        (new_coins, new_best, req.target_id),
-    )
-    con.commit()
-    con.close()
+        new_coins = int(target[0]) + int(req.amount)
+        new_best = max(int(target[1]), new_coins)
 
-    return state(req.target_id)
+        con.execute(
+            "UPDATE players SET coins=%s,max_coins=%s WHERE telegram_id=%s",
+            (new_coins, new_best, req.target_id),
+        )
+
+    return get_state(req.target_id)
