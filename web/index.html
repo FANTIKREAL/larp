@@ -127,7 +127,8 @@ tg.ready();tg.expand();
 const initData=tg.initData;
 let state=null;
 let evilTimer=null;
-let tapQueue=0;
+let pendingTaps=0;
+let flushTimer=null;
 let sending=false;
 
 const EASTER=[333,3333,33333,333333];
@@ -148,13 +149,67 @@ function render(s){
   $('tapUpgrade').textContent=`⚡ +1 к клику (${100*s.tap_power*s.tap_power} 🪙)`;
   $('energyUpgrade').textContent=`🔋 +250 энергии (${150*s.energy_level*s.energy_level} 🪙)`;
 
-  if(s.is_admin){
-    $('adminNav').style.display='block';
-  }
+  if(s.is_admin) $('adminNav').style.display='block';
 
-  if(oldCoins!==s.coins && EASTER.includes(Number(s.coins))){
+  if(oldCoins!==undefined && oldCoins!==s.coins && EASTER.includes(Number(s.coins))){
     triggerEaster();
   }
+}
+
+function optimisticTap(count,x,y){
+  if(!state || count<=0)return 0;
+  const actual=Math.min(count,Math.floor(Number(state.energy)));
+  if(actual<=0)return 0;
+
+  const gained=actual*Number(state.tap_power);
+  state.coins=Number(state.coins)+gained;
+  state.max_coins=Math.max(Number(state.max_coins||0),state.coins);
+  state.energy=Number(state.energy)-actual;
+  $('coins').textContent=Number(state.coins).toLocaleString('ru-RU');
+  $('energy').textContent=state.energy;
+  $('energyBar').style.width=Math.max(0,Math.min(100,state.energy/state.max_energy*100))+'%';
+
+  const f=document.createElement('div');
+  f.className='float';
+  f.textContent='+'+gained.toLocaleString('ru-RU')+' 🪙';
+  f.style.left=x+'px';
+  f.style.top=y+'px';
+  document.body.appendChild(f);
+  setTimeout(()=>f.remove(),700);
+
+  if(EASTER.includes(Number(state.coins))) triggerEaster();
+  return actual;
+}
+
+async function flushTaps(){
+  if(sending || pendingTaps<=0 || !state)return;
+  sending=true;
+  const count=Math.min(pendingTaps,20);
+  pendingTaps-=count;
+
+  try{
+    const serverState=await api('/api/tap',{init_data:initData,taps:count});
+    // Server is authoritative. The UI was already updated instantly, so this
+    // only reconciles the final values after the batch reaches the server.
+    render(serverState);
+  }catch(err){
+    console.error(err);
+    // If the request failed, refresh the real state instead of leaving a fake balance.
+    try{ render(await api('/api/state',{init_data:initData})); }catch(e){ console.error(e); }
+  }finally{
+    sending=false;
+    if(pendingTaps>0) flushTaps();
+  }
+}
+
+function queueTap(x,y){
+  if(!state || state.energy<=0)return;
+  const actual=optimisticTap(1,x,y);
+  if(actual<=0)return;
+  pendingTaps+=actual;
+  clearTimeout(flushTimer);
+  // Small debounce groups very fast taps/fingers into one request.
+  flushTimer=setTimeout(flushTaps,60);
 }
 
 async function api(path,body){
@@ -180,48 +235,9 @@ function triggerEaster(){
   },5000);
 }
 
-async function sendTap(taps,x,y){
-  if(!state || taps<=0)return;
-
-  const actual=Math.min(taps,state.energy);
-  if(actual<=0)return;
-
-  const f=document.createElement('div');
-  f.className='float';
-  f.textContent='+'+(actual*state.tap_power)+' 🪙';
-  f.style.left=x+'px';
-  f.style.top=y+'px';
-  document.body.appendChild(f);
-  setTimeout(()=>f.remove(),700);
-
-  try{
-    const s=await api('/api/tap',{init_data:initData,taps:actual});
-    render(s);
-  }catch(err){
-    console.error(err);
-  }
-}
-
-$('coin').addEventListener('pointerdown',async e=>{
+$('coin').addEventListener('pointerdown',e=>{
   e.preventDefault();
-
-  if(!state || state.energy<=0)return;
-
-  // Every physical pointer is counted. Four simultaneous fingers = 4 taps.
-  tapQueue++;
-  const x=e.clientX;
-  const y=e.clientY;
-
-  if(sending)return;
-  sending=true;
-
-  while(tapQueue>0){
-    const count=tapQueue;
-    tapQueue=0;
-    await sendTap(count,x,y);
-  }
-
-  sending=false;
+  queueTap(e.clientX,e.clientY);
 });
 
 $('tapUpgrade').onclick=async()=>{
@@ -298,7 +314,7 @@ setInterval(async()=>{
     const s=await api('/api/state',{init_data:initData});
     render(s);
   }catch(e){console.error(e)}
-},500);
+},2000);
 
 async function init(){
   if(!initData){
