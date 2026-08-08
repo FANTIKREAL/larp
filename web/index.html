@@ -44,7 +44,11 @@ body.evil .energy>div{background:#ff1111}
 .admin-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .admin-grid input{width:100%;padding:13px;border-radius:12px;border:1px solid #394352;background:#11161d;color:#fff;font-size:15px}
 .admin-grid button{grid-column:1/-1}
-#musicBtn{border:1px solid #394352;background:#1b222c;color:#fff;min-width:42px;cursor:pointer}\n#musicBtn:active{transform:scale(.94)}\n.notice{padding:10px 12px;border-radius:12px;background:#11161d;color:#9ca8b8;font-size:13px;margin-top:10px}
+.music-btn{padding:9px 11px!important;border-radius:12px!important;font-size:18px!important;
+background:#1b222c!important;border:1px solid #394352!important;color:#fff!important;
+min-width:42px;touch-action:manipulation;position:relative;z-index:100;pointer-events:auto}
+.music-btn:active{transform:scale(.92)}
+.notice{padding:10px 12px;border-radius:12px;background:#11161d;color:#9ca8b8;font-size:13px;margin-top:10px}
 </style>
 </head>
 <body>
@@ -54,7 +58,7 @@ body.evil .energy>div{background:#ff1111}
     <div class="title">🔴 LARP COIN</div>
     <div class="small" id="name">Загрузка...</div>
   </div>
-  <div style="display:flex;align-items:center;gap:8px"><button id="musicBtn" style="padding:9px 11px;border-radius:12px;font-size:18px">🔇</button><div class="small" id="myId"></div></div>
+  <div style="display:flex;align-items:center;gap:8px"><button id="musicBtn" type="button" class="music-btn">🔇</button><div class="small" id="myId"></div></div>
 </header>
 
 <section id="game" class="panel active">
@@ -305,11 +309,12 @@ setInterval(async()=>{
 },500);
 
 
-const bgMusic = $('bgMusic');
-const musicBtn = $('musicBtn');
+const bgMusic = document.getElementById('bgMusic');
+const musicBtn = document.getElementById('musicBtn');
 let musicOn = false;
 
-// Browser/Telegram may block autoplay until the user interacts.
+bgMusic.volume = 0.35;
+
 async function startMusic(){
   try{
     await bgMusic.play();
@@ -318,6 +323,7 @@ async function startMusic(){
   }catch(e){
     musicOn = false;
     musicBtn.textContent = '🔇';
+    console.log('Autoplay blocked until user interaction');
   }
 }
 
@@ -327,16 +333,31 @@ function stopMusic(){
   musicBtn.textContent = '🔇';
 }
 
-$('musicBtn').onclick = async (e)=>{
-  e.stopPropagation();
+window.toggleMusic = async function(event){
+  if(event){
+    event.preventDefault();
+    event.stopPropagation();
+  }
   if(musicOn) stopMusic();
   else await startMusic();
 };
 
-// Start after the first user interaction, if the player hasn't muted it.
-document.addEventListener('pointerdown', ()=>{
+musicBtn.addEventListener('pointerdown', function(event){
+  event.preventDefault();
+  event.stopPropagation();
+});
+
+musicBtn.addEventListener('click', function(event){
+  event.preventDefault();
+  event.stopPropagation();
+  window.toggleMusic(event);
+});
+
+// First tap anywhere can start music; clicking the music button itself is handled above.
+document.addEventListener('pointerdown', function firstInteraction(){
   if(!musicOn) startMusic();
-}, {once:true});
+  document.removeEventListener('pointerdown', firstInteraction);
+}, {passive:true});
 
 async function init(){
   if(!initData){
