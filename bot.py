@@ -1,64 +1,54 @@
 import os
 import asyncio
-import logging
-from aiogram import Bot, Dispatcher, F
+from dotenv import load_dotenv
+from aiogram import Bot, Dispatcher
 from aiogram.filters import CommandStart
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
-from dotenv import load_dotenv
 
 load_dotenv()
+
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://YOUR-DOMAIN.example/")
+WEB_APP_URL = os.getenv("WEB_APP_URL", "").rstrip("/")
 
 if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN is not set in .env")
+    raise RuntimeError("BOT_TOKEN is not set")
+if not WEB_APP_URL:
+    raise RuntimeError("WEB_APP_URL is not set")
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
 
-def menu():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🪙 Открыть тапалку", web_app=WebAppInfo(url=WEBAPP_URL))]
-    ])
 
 @dp.message(CommandStart())
 async def start(message: Message):
-    ref_id = None
+    parts = (message.text or "").split(maxsplit=1)
+    referral = parts[1] if len(parts) == 2 else ""
 
-    if message.text:
-        parts = message.text.split(maxsplit=1)
+    # The referral is put into the WebApp URL. The web app also accepts
+    # ref=... directly, so the friend is opened inside Telegram.
+    url = f"{WEB_APP_URL}/?ref={referral}" if referral else f"{WEB_APP_URL}/"
 
-        if len(parts) == 2 and parts[1].startswith("ref_"):
-            ref_id = parts[1][4:]
-
-    webapp_url = WEBAPP_URL
-
-    if ref_id and ref_id.isdigit():
-        webapp_url = f"{WEBAPP_URL}?ref={ref_id}"
-
-    keyboard = InlineKeyboardMarkup(
+    kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🪙 Открыть тапалку",
-                    web_app=WebAppInfo(url=webapp_url)
-                )
-            ]
+            [InlineKeyboardButton(
+                text="🪙 ОТКРЫТЬ LARP COIN",
+                web_app=WebAppInfo(url=url),
+            )]
         ]
     )
 
     await message.answer(
         "🔴 <b>LARP COIN</b>\n\n"
-        "Тапай по LARP COIN, копи монеты, прокачивай силу клика и энергию.\n\n"
-        "🪙 Реферальный бонус будет учтён автоматически.",
-        reply_markup=keyboard,
-        parse_mode="HTML"
-    )
+        "Тапай по монете, прокачивай силу клика и энергию.\n"
+        "Приглашай друзей по реферальной ссылке.",
+        reply_markup=kb,
+        parse_mode="HTML",
     )
 
+
 async def main():
-    logging.basicConfig(level=logging.INFO)
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
