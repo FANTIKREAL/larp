@@ -153,8 +153,12 @@ function showPanel(id){
   $(id).classList.add('active');
 }
 $('share').onclick=()=>{
-  const link=`https://t.me/share/url?url=${encodeURIComponent(location.origin)}&text=${encodeURIComponent('Заходи в LARP COIN 🔴')}`;
-  tg.openTelegramLink(link);
+  if(!state) return;
+
+  const botLink=`https://t.me/larpcoin333bot?start=ref_${state.id}`;
+  const shareLink=`https://t.me/share/url?url=${encodeURIComponent(botLink)}&text=${encodeURIComponent('🔴 Заходи в LARP COIN и получи бонус!')}`;
+
+  tg.openTelegramLink(shareLink);
 };
 setInterval(()=>{if(state){render({...state,energy:Math.min(state.max_energy,state.energy+1)})}},1000);
 init();
