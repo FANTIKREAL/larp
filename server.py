@@ -83,8 +83,15 @@ def check_init_data(init_data: str):
     return user
 
 
-def regenerate_values(energy, max_energy, last_ts):
-    """Restore exactly 1 energy every 500 ms, never above max_energy."""
+def energy_interval_ms(energy_level: int) -> int:
+    # Level 1 = 500 ms. Each energy upgrade makes regeneration faster.
+    # Keep a sensible floor so high levels cannot create an abusive request rate.
+    level = max(1, int(energy_level))
+    return max(100, 500 - (level - 1) * 50)
+
+
+def regenerate_values(energy, max_energy, last_ts, energy_level=1):
+    """Restore 1 energy per level-dependent interval, never above max_energy."""
     max_energy = max(0, int(max_energy))
     energy = min(max(0, int(energy)), max_energy)
     now = int(time.time() * 1000)
@@ -93,11 +100,11 @@ def regenerate_values(energy, max_energy, last_ts):
         last = now
 
     if energy >= max_energy:
-        # Once full, don't accumulate a huge backlog while the player is away.
         return max_energy, now
 
+    interval = energy_interval_ms(energy_level)
     elapsed = max(0, now - last)
-    gained = elapsed // 500
+    gained = elapsed // interval
     if gained <= 0:
         return energy, last
 
@@ -105,7 +112,7 @@ def regenerate_values(energy, max_energy, last_ts):
     if new_energy >= max_energy:
         new_last = now
     else:
-        new_last = last + gained * 500
+        new_last = last + gained * interval
     return new_energy, new_last
 
 
@@ -117,27 +124,30 @@ def ensure_user(user, referral_code=None):
         if row:
             con.execute("UPDATE players SET username=%s, first_name=%s WHERE telegram_id=%s", (user.get("username", ""), user.get("first_name", ""), tg_id))
             return
+
         ref_id = None
-        if referral_code:
-            raw = str(referral_code)
-            if raw.startswith("ref_"):
-                raw = raw[4:]
-            if raw.isdigit():
-                candidate = int(raw)
-                if candidate != tg_id:
-                    exists = con.execute("SELECT telegram_id FROM players WHERE telegram_id=%s", (candidate,)).fetchone()
-                    if exists:
-                        ref_id = candidate
+        raw = str(referral_code or "").strip()
+        if raw.startswith("ref_"):
+            raw = raw[4:]
+        if raw.isdigit():
+            candidate = int(raw)
+            if candidate != tg_id:
+                exists = con.execute("SELECT telegram_id FROM players WHERE telegram_id=%s", (candidate,)).fetchone()
+                if exists:
+                    ref_id = candidate
+
         con.execute("""
             INSERT INTO players
             (telegram_id, username, first_name, coins, max_coins, energy, max_energy,
              referrals, tap_power, energy_level, last_energy_ts, referred_by, created_at)
             VALUES (%s,%s,%s,0,0,1000,1000,0,1,1,%s,%s,%s)
         """, (tg_id, user.get("username", ""), user.get("first_name", ""), now, ref_id, now))
+
         if ref_id:
             con.execute("""
                 UPDATE players
-                SET referrals=referrals+1, coins=coins+1000,
+                SET referrals=referrals+1,
+                    coins=coins+1000,
                     max_coins=GREATEST(max_coins, coins+1000)
                 WHERE telegram_id=%s
             """, (ref_id,))
@@ -153,7 +163,7 @@ def get_state(tg_id):
         if not r:
             raise HTTPException(404, "Пользователь не найден")
 
-        energy, new_ts = regenerate_values(r[5], r[6], r[10])
+        energy, new_ts = regenerate_values(r[5], r[6], r[10], r[8])
         con.execute("UPDATE players SET energy=%s,last_energy_ts=%s WHERE telegram_id=%s", (energy, new_ts, tg_id))
 
         return {
@@ -209,10 +219,10 @@ def api_tap(req: TapRequest):
     ensure_user(user)
     with db() as con:
         row = con.execute("""
-            SELECT coins,max_coins,energy,max_energy,tap_power,last_energy_ts
+            SELECT coins,max_coins,energy,max_energy,tap_power,last_energy_ts,energy_level
             FROM players WHERE telegram_id=%s FOR UPDATE
         """, (tg_id,)).fetchone()
-        energy, ts = regenerate_values(row[2], row[3], row[5])
+        energy, ts = regenerate_values(row[2], row[3], row[5], row[6])
         actual = min(int(req.taps), energy)
         gained = actual * int(row[4])
         new_coins = int(row[0]) + gained
