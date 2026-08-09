@@ -169,3 +169,14 @@ def admin_withdraw(req:GrantRequest):
         if not target:raise HTTPException(404,'Пользователь ещё не запускал игру')
         con.execute('UPDATE players SET coins=%s WHERE telegram_id=%s',(max(0,int(target[0])-req.amount),req.target_id))
     return get_state(req.target_id)
+@app.post('/api/admin/reset')
+def admin_reset(req:GrantRequest):
+    admin=check_init_data(req.init_data)
+    if int(admin['id']) not in ADMIN_IDS:raise HTTPException(403,'Нет доступа к админке')
+    if req.target_id<=0:raise HTTPException(400,'Неверный Telegram ID')
+    with db() as con:
+        target=con.execute('SELECT telegram_id FROM players WHERE telegram_id=%s FOR UPDATE',(req.target_id,)).fetchone()
+        if not target:raise HTTPException(404,'Пользователь ещё не запускал игру')
+        con.execute('''UPDATE players SET coins=0,max_coins=0,energy=1000,max_energy=1000,referrals=0,tap_power=1,energy_level=1,last_energy_ts=EXTRACT(EPOCH FROM NOW())*1000,level=1,xp=0,combo_best=0,daily_streak=0,daily_claim_ts=0,last_task_day='',task_taps=0,task_coins=0,rare_found=0,referred_by=NULL WHERE telegram_id=%s''',(req.target_id,))
+        con.execute('DELETE FROM task_claims WHERE telegram_id=%s',(req.target_id,))
+    return get_state(req.target_id)
